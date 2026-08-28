@@ -1,0 +1,73 @@
+diagram:
+  '@id': overview
+  '@name': Overview
+  mxGraphModel:
+    '@arrows': '1'
+    '@connect': '1'
+    '@dx': '1000'
+    '@dy': '600'
+    '@fold': '1'
+    '@grid': '1'
+    '@gridSize': '10'
+    '@guides': '1'
+    '@page': '1'
+    '@pageHeight': '1169'
+    '@pageScale': '1'
+    '@pageWidth': '827'
+    '@tooltips': '1'
+    root:
+      mxCell:
+      - '@id': '0'
+      - '@id': '1'
+        '@parent': '0'
+      - '@id': repo
+        '@parent': '1'
+        '@style': rounded=1;whiteSpace=wrap;html=1;
+        '@value': Git repository<br>(YAML diagrams)
+        '@vertex': '1'
+        mxGeometry:
+          '@as': geometry
+          '@height': '60'
+          '@width': '160'
+          '@x': '80'
+          '@y': '120'
+      - '@id': dac
+        '@parent': '1'
+        '@style': rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;
+        '@value': dac export-confluence
+        '@vertex': '1'
+        mxGeometry:
+          '@as': geometry
+          '@height': '60'
+          '@width': '160'
+          '@x': '320'
+          '@y': '120'
+      - '@id': conf
+        '@parent': '1'
+        '@style': rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;
+        '@value': Confluence<br>base page + subpages
+        '@vertex': '1'
+        mxGeometry:
+          '@as': geometry
+          '@height': '60'
+          '@width': '160'
+          '@x': '560'
+          '@y': '120'
+      - '@edge': '1'
+        '@id': e1
+        '@parent': '1'
+        '@source': repo
+        '@style': edgeStyle=orthogonalEdgeStyle;html=1;
+        '@target': dac
+        mxGeometry:
+          '@as': geometry
+          '@relative': '1'
+      - '@edge': '1'
+        '@id': e2
+        '@parent': '1'
+        '@source': dac
+        '@style': edgeStyle=orthogonalEdgeStyle;html=1;
+        '@target': conf
+        mxGeometry:
+          '@as': geometry
+          '@relative': '1'

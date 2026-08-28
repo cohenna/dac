@@ -92,51 +92,80 @@ def diagram_to_code(base_filename):
     print(f"\n✓ Converted {drawio_path} → {output_dir}/ ({len(diagrams)} diagrams)")
 
 
-def code_to_diagram(base_filename):
-    """Convert separate YAML files back to drawio XML."""
-    input_dir = Path(base_filename)
-    drawio_path = f"{base_filename}.drawio"
+def find_diagram_dirs(root):
+    """
+    Recursively find diagram directories (those containing `_manifest.yaml`)
+    under `root`. Returns a sorted list of `Path` objects.
+    """
+    root = Path(root)
+    if not root.is_dir():
+        raise FileNotFoundError(f"{root}/ directory not found.")
+    return sorted(p.parent for p in root.rglob("_manifest.yaml"))
+
+
+def load_mxfile(input_dir):
+    """
+    Read a diagram directory (manifest + per-diagram YAML files) and return the
+    `mxfile` dict that `xmltodict.unparse` expects, plus the manifest.
+
+    Raises FileNotFoundError if the directory, manifest or a diagram file is
+    missing. This is the library-friendly core used by `code_to_diagram`.
+    """
+    input_dir = Path(input_dir)
     manifest_path = input_dir / "_manifest.yaml"
-    
+
     if not input_dir.exists():
-        print(f"Error: {input_dir}/ directory not found.")
-        sys.exit(1)
-    
+        raise FileNotFoundError(f"{input_dir}/ directory not found.")
     if not manifest_path.exists():
-        print(f"Error: {manifest_path} not found.")
-        sys.exit(1)
-    
-    # Read manifest
+        raise FileNotFoundError(f"{manifest_path} not found.")
+
     with open(manifest_path, 'r') as f:
-        manifest = yaml.safe_load(f)
-    
-    # Reconstruct mxfile structure
+        manifest = yaml.safe_load(f) or {}
+
     mxfile = dict(manifest.get('mxfile', {}))
     diagrams = []
-    
-    # Read each diagram file in order
+
     for diagram_info in manifest.get('diagrams', []):
         yaml_file = input_dir / diagram_info['file']
         if not yaml_file.exists():
-            print(f"Error: {yaml_file} not found.")
-            sys.exit(1)
-        
+            raise FileNotFoundError(f"{yaml_file} not found.")
         with open(yaml_file, 'r') as f:
             diagram_data = yaml.safe_load(f)
-        
         diagrams.append(diagram_data['diagram'])
-        print(f"  ✓ {diagram_info['name']} ← {yaml_file}")
-    
-    # Handle single vs multiple diagrams
+
+    # xmltodict expects a single child as a dict and several as a list
     if len(diagrams) == 1:
         mxfile['diagram'] = diagrams[0]
     else:
         mxfile['diagram'] = diagrams
-    
-    # Convert to XML
+
+    return mxfile, manifest
+
+
+def build_drawio_xml(input_dir):
+    """Return the draw.io XML for a diagram directory without writing it to disk."""
+    mxfile, _ = load_mxfile(input_dir)
+    return xmltodict.unparse({'mxfile': mxfile}, pretty=True)
+
+
+def code_to_diagram(base_filename):
+    """Convert separate YAML files back to drawio XML."""
+    input_dir = Path(base_filename)
+    drawio_path = f"{base_filename}.drawio"
+
+    try:
+        mxfile, manifest = load_mxfile(input_dir)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
+
+    for diagram_info in manifest.get('diagrams', []):
+        print(f"  ✓ {diagram_info['name']} ← {input_dir / diagram_info['file']}")
+
     xml_content = xmltodict.unparse({'mxfile': mxfile}, pretty=True)
-    
+
     with open(drawio_path, 'w') as f:
         f.write(xml_content)
-    
-    print(f"\n✓ Converted {input_dir}/ → {drawio_path} ({len(diagrams)} diagrams)")
+
+    count = len(manifest.get('diagrams', []))
+    print(f"\n✓ Converted {input_dir}/ → {drawio_path} ({count} diagrams)")
