@@ -27,7 +27,10 @@ conflicts. DAC splits the file so that:
 - **the round-trip is lossless** — every element and attribute of the original
   XML is preserved (`XML → YAML → XML`);
 - **tab order and file-level metadata are kept** in a small `_manifest.yaml`;
-- **YAML is easy to edit by hand** (or by tooling) between conversions.
+- **YAML is easy to edit by hand** (or by tooling) between conversions;
+- **diagrams can be published to Confluence** automatically on every merge,
+  as a page hierarchy with the `.drawio` embedded and a permalink to the
+  commit they came from (see [Confluence export](#confluence-export)).
 
 ## Installation
 
@@ -50,8 +53,9 @@ Requires Python 3.9+. Runtime dependencies are only
 
 ## Usage
 
-The CLI has two modes. Both take a *base name* and derive the input and output
-from it: `foo.drawio` on the diagram side, `foo/` on the code side.
+The CLI has two conversion commands and one publishing command. The
+conversion commands take a *base name* and derive the input and output from
+it: `foo.drawio` on the diagram side, `foo/` on the code side.
 
 ### Diagram → Code (`d2c`)
 
@@ -100,6 +104,79 @@ dac c2d architecture
 
 Whether you also commit the `.drawio` file is up to you; the YAML directory is
 the source of truth and the `.drawio` can always be regenerated.
+
+## Confluence export
+
+`dac export-confluence` publishes every diagram directory under a root
+(default `diagrams/`) to Confluence Cloud:
+
+```
+Confluence space
+└── Diagrams                      ← base page (index of all diagrams + version info)
+    ├── architecture              ← one child page per diagram directory
+    │     ├── architecture.drawio ← attached, embedded via the draw.io macro
+    │     └── Version: commit, permalink, timestamp, workflow run
+    └── network
+```
+
+- **Pages are created on first export and updated in place afterwards**, so
+  links stay stable. Pages are never deleted by DAC.
+- **Only changed diagrams are updated.** A content hash is stored as a page
+  property; unchanged diagrams are skipped (use `--force` to re-publish).
+- **Every page carries a *Version* section** with the commit SHA, a permalink
+  to the diagram's source directory at that commit, the branch, the
+  generation time and (in CI) the workflow run. The Confluence page version
+  message is `DAC export from <sha>`, so the page history doubles as an
+  export log.
+- The base page body is replaced by an index table (pass `--no-index` to
+  keep a hand-written base page).
+- Requires the [draw.io for Confluence](https://marketplace.atlassian.com/apps/1210933/draw-io-diagrams-for-confluence)
+  app for the embedded diagram to render; without it the page still shows
+  the version info and a download link to the attached `.drawio`.
+
+### Running it by hand
+
+```bash
+export CONFLUENCE_URL=https://example.atlassian.net
+export CONFLUENCE_USER=you@example.com
+export CONFLUENCE_API_TOKEN=...            # https://id.atlassian.com/manage-profile/security/api-tokens
+
+# Target an existing page by id...
+dac export-confluence --root diagrams --base-page-id 123456789
+
+# ...or find/create the base page by title in a space
+dac export-confluence --root diagrams --space DOC --base-title "Architecture diagrams"
+
+dac export-confluence --dry-run       # report only, no writes
+dac export-confluence --force         # re-publish even if unchanged
+dac export-confluence --out-dir build # also write the generated .drawio files
+```
+
+Every option has a `CONFLUENCE_*` environment-variable fallback
+(`dac export-confluence --help` lists them). The repository URL and commit
+are auto-detected from GitHub Actions variables or the local git checkout;
+override with `--repo-url` / `--commit`.
+
+### Automating with GitHub Actions
+
+`.github/workflows/confluence-export.yml` runs the export on every push to
+`master` that touches `diagrams/**` (and on manual dispatch). To enable it,
+add in *Settings → Secrets and variables → Actions*:
+
+| Kind | Name | Value |
+|------|------|-------|
+| Secret | `CONFLUENCE_URL` | `https://<site>.atlassian.net` |
+| Secret | `CONFLUENCE_USER` | account email that owns the token |
+| Secret | `CONFLUENCE_API_TOKEN` | Atlassian API token |
+| Variable | `CONFLUENCE_BASE_PAGE_ID` | id of the base page, **or** … |
+| Variable | `CONFLUENCE_SPACE_KEY` + `CONFLUENCE_BASE_TITLE` | space key and base page title (created if missing; `CONFLUENCE_PARENT_PAGE_ID` optional) |
+
+The job is skipped until one of the targeting variables is set, so the
+workflow is safe to merge before Confluence is configured. Generated
+`.drawio` files are also uploaded as a workflow artifact.
+
+The example diagram set in `diagrams/example/` is what the workflow publishes
+for this repository; replace it with your own diagram directories.
 
 ## File format
 
@@ -155,17 +232,29 @@ YAML is not human-readable.
 
 ## Python API
 
-The CLI is a thin wrapper around `dac.converter`:
+The CLI is a thin wrapper around `dac.converter` and `dac.confluence`:
 
 ```python
-from dac import diagram_to_code, code_to_diagram
+from dac import diagram_to_code, code_to_diagram, build_drawio_xml, find_diagram_dirs
 from dac import xml_to_yaml_lossless, yaml_to_xml_lossless
 
 diagram_to_code("architecture")      # architecture.drawio -> architecture/
 code_to_diagram("architecture")      # architecture/       -> architecture.drawio
 
+xml_text = build_drawio_xml("architecture")          # in-memory, no file written
+for d in find_diagram_dirs("diagrams"):              # every dir with a _manifest.yaml
+    print(d, build_drawio_xml(d)[:40])
+
 yaml_text = xml_to_yaml_lossless(open("x.drawio").read())
 xml_text  = yaml_to_xml_lossless(yaml_text)
+```
+
+```python
+from dac.confluence import ConfluenceClient, export_to_confluence
+
+client = ConfluenceClient("https://example.atlassian.net", "you@example.com", token)
+result = export_to_confluence(client, "diagrams", base_page_id="123456789")
+print(result.created, result.updated, result.skipped, result.base_page_url)
 ```
 
 ## Development
@@ -177,7 +266,8 @@ pytest --cov=src/dac         # with coverage
 ```
 
 Tests run in CI on every push and pull request to `master`
-(`.github/workflows/tests.yml`).
+(`.github/workflows/tests.yml`). The Confluence exporter is tested against an
+in-memory fake client, so the suite needs no network or credentials.
 
 Project layout, conventions and guidance for contributors and AI coding agents
 are in [AGENTS.md](AGENTS.md).

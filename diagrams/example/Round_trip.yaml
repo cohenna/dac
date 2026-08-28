@@ -1,0 +1,58 @@
+diagram:
+  '@id': roundtrip
+  '@name': Round trip
+  mxGraphModel:
+    '@dx': '1000'
+    '@dy': '600'
+    '@grid': '1'
+    '@gridSize': '10'
+    '@page': '1'
+    '@pageHeight': '1169'
+    '@pageWidth': '827'
+    root:
+      mxCell:
+      - '@id': '0'
+      - '@id': '1'
+        '@parent': '0'
+      - '@id': drawio
+        '@parent': '1'
+        '@style': shape=document;whiteSpace=wrap;html=1;
+        '@value': example.drawio
+        '@vertex': '1'
+        mxGeometry:
+          '@as': geometry
+          '@height': '70'
+          '@width': '140'
+          '@x': '80'
+          '@y': '120'
+      - '@id': yaml
+        '@parent': '1'
+        '@style': shape=folder;whiteSpace=wrap;html=1;
+        '@value': example/<br>_manifest.yaml + *.yaml
+        '@vertex': '1'
+        mxGeometry:
+          '@as': geometry
+          '@height': '70'
+          '@width': '160'
+          '@x': '400'
+          '@y': '120'
+      - '@edge': '1'
+        '@id': d2c
+        '@parent': '1'
+        '@source': drawio
+        '@style': edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.25;
+        '@target': yaml
+        '@value': dac d2c
+        mxGeometry:
+          '@as': geometry
+          '@relative': '1'
+      - '@edge': '1'
+        '@id': c2d
+        '@parent': '1'
+        '@source': yaml
+        '@style': edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.75;entryX=1;entryY=0.75;
+        '@target': drawio
+        '@value': dac c2d
+        mxGeometry:
+          '@as': geometry
+          '@relative': '1'

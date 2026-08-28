@@ -1,0 +1,85 @@
+# Publish every diagram directory under `diagrams/` to Confluence on each
+# merge to master. Skeleton: configure the secrets/variables below in the
+# repository settings (Settings → Secrets and variables → Actions).
+#
+#   Secrets
+#     CONFLUENCE_URL           https://<site>.atlassian.net
+#     CONFLUENCE_USER          Atlassian account email that owns the token
+#     CONFLUENCE_API_TOKEN     API token from https://id.atlassian.com/manage-profile/security/api-tokens
+#   Variables (one of the two targeting styles)
+#     CONFLUENCE_BASE_PAGE_ID  ID of an existing page to use as the base ("folder") page
+#   -- or --
+#     CONFLUENCE_SPACE_KEY     Space key; the base page is looked up / created by title
+#     CONFLUENCE_BASE_TITLE    Title of the base page (default: "Diagrams")
+#     CONFLUENCE_PARENT_PAGE_ID  Optional parent for a newly created base page
+#
+# Each diagram page records the commit it was generated from with a permalink
+# back to this repository, and Confluence's page history keeps every export.
+
+name: Export diagrams to Confluence
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "diagrams/**"
+      - "src/dac/**"
+      - ".github/workflows/confluence-export.yml"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-publish pages even when the diagram content is unchanged"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Only report what would change"
+        type: boolean
+        default: false
+
+concurrency:
+  group: confluence-export
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    # Remove this condition once the secrets are configured, or keep it so
+    # forks without credentials skip the job instead of failing.
+    if: ${{ vars.CONFLUENCE_BASE_PAGE_ID != '' || vars.CONFLUENCE_SPACE_KEY != '' }}
+    env:
+      CONFLUENCE_URL: ${{ secrets.CONFLUENCE_URL }}
+      CONFLUENCE_USER: ${{ secrets.CONFLUENCE_USER }}
+      CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+      CONFLUENCE_BASE_PAGE_ID: ${{ vars.CONFLUENCE_BASE_PAGE_ID }}
+      CONFLUENCE_SPACE_KEY: ${{ vars.CONFLUENCE_SPACE_KEY }}
+      CONFLUENCE_BASE_TITLE: ${{ vars.CONFLUENCE_BASE_TITLE || 'Diagrams' }}
+      CONFLUENCE_PARENT_PAGE_ID: ${{ vars.CONFLUENCE_PARENT_PAGE_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install DAC
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Export to Confluence
+        run: |
+          dac export-confluence \
+            --root diagrams \
+            --out-dir build/drawio \
+            ${{ inputs.force == true && '--force' || '' }} \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}
+
+      - name: Upload generated .drawio files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drawio-${{ github.sha }}
+          path: build/drawio/
+          if-no-files-found: ignore
