@@ -112,27 +112,37 @@ the source of truth and the `.drawio` can always be regenerated.
 
 ```
 Confluence space
-└── Diagrams                      ← base page (index of all diagrams + version info)
-    ├── architecture              ← one child page per diagram directory
-    │     ├── architecture.drawio ← attached, embedded via the draw.io macro
-    │     └── Version: commit, permalink, timestamp, workflow run
+└── Diagrams                          ← base page (index of all diagrams + version info)
+    ├── architecture                  ← one child page per diagram directory:
+    │   │                               commit permalink to the source directory,
+    │   │                               links to the tab pages, complete .drawio download
+    │   ├── architecture: Overview    ← one child page per diagram tab:
+    │   │                               the diagram embedded via the draw.io macro,
+    │   │                               commit permalink to the tab's YAML file
+    │   └── architecture: Deployment
     └── network
+        └── network: Topology
 ```
 
 - **Pages are created on first export and updated in place afterwards**, so
   links stay stable. Pages are never deleted by DAC.
-- **Only changed diagrams are updated.** A content hash is stored as a page
-  property; unchanged diagrams are skipped (use `--force` to re-publish).
+- **Only changed pages are updated.** A content hash is stored as a page
+  property; unchanged diagrams and tabs are skipped (use `--force` to
+  re-publish). Editing one tab only republishes that tab's page (and its
+  diagram page).
 - **Every page carries a *Version* section** with the commit SHA, a permalink
-  to the diagram's source directory at that commit, the branch, the
-  generation time and (in CI) the workflow run. The Confluence page version
-  message is `DAC export from <sha>`, so the page history doubles as an
-  export log.
+  to the source at that commit (the diagram directory on diagram pages, the
+  exact YAML file on tab pages), the branch, the generation time and (in CI)
+  the workflow run. The Confluence page version message is
+  `DAC export from <sha>`, so the page history doubles as an export log.
 - The base page body is replaced by an index table (pass `--no-index` to
   keep a hand-written base page).
 - Requires the [draw.io for Confluence](https://marketplace.atlassian.com/apps/1210933/draw-io-diagrams-for-confluence)
-  app for the embedded diagram to render; without it the page still shows
-  the version info and a download link to the attached `.drawio`.
+  app for the embedded diagram to render; without it the tab page still
+  shows the version info and a download link to the attached `.drawio`.
+  (In the editor this macro is the one called *draw.io Diagram* — *Embed
+  draw.io Diagram* is a different macro that references a diagram attached
+  to another page; DAC attaches each tab's file to its own page.)
 
 ### Running it by hand
 

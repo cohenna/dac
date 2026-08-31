@@ -148,6 +148,19 @@ def build_drawio_xml(input_dir):
     return xmltodict.unparse({'mxfile': mxfile}, pretty=True)
 
 
+def build_tab_drawio_xml(mxfile, diagram):
+    """
+    Return draw.io XML containing a single diagram tab.
+
+    `mxfile` supplies the `@`-attributes (e.g. as returned by `load_mxfile`);
+    `diagram` is one tab's dict. Used by the Confluence export to attach one
+    `.drawio` file per tab page.
+    """
+    single = {k: v for k, v in mxfile.items() if k.startswith('@')}
+    single['diagram'] = diagram
+    return xmltodict.unparse({'mxfile': single}, pretty=True)
+
+
 def code_to_diagram(base_filename):
     """Convert separate YAML files back to drawio XML."""
     input_dir = Path(base_filename)

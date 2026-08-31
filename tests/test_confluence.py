@@ -18,6 +18,7 @@ from dac.confluence import (
     export_to_confluence,
     index_page_body,
     normalize_repo_url,
+    tab_page_body,
 )
 
 
@@ -161,12 +162,23 @@ class TestCollectDiagrams:
         assert [s.title for s in sources] == ["alpha", "beta"]
         assert sources[0].rel_path == "diagrams/alpha"
         assert sources[0].attachment_name == "alpha.drawio"
-        assert sources[1].tabs == ["First Page", "Second Page", "Third/Special Page"]
+        assert [t.name for t in sources[1].tabs] == ["First Page", "Second Page", "Third/Special Page"]
         assert "<mxfile" in sources[1].xml and sources[1].xml.count("<diagram") == 3
+
+    def test_tab_sources(self, diagrams_root, temp_dir):
+        tab = collect_diagrams(diagrams_root, repo_root=temp_dir)[1].tabs[2]
+        assert tab.title == "beta: Third/Special Page"
+        assert tab.rel_path == "diagrams/beta/Third_Special_Page.yaml"
+        assert tab.attachment_name == "Third_Special_Page.drawio"
+        # a single-tab mxfile that keeps the parent's attributes
+        assert tab.xml.count("<diagram") == 1
+        assert 'name="Third/Special Page"' in tab.xml
+        assert 'host="Electron"' in tab.xml
 
     def test_title_prefix(self, diagrams_root, temp_dir):
         sources = collect_diagrams(diagrams_root, title_prefix="Arch: ", repo_root=temp_dir)
         assert sources[0].title == "Arch: alpha"
+        assert sources[0].tabs[0].title == "Arch: alpha: Test Diagram"
 
     def test_content_hash_is_stable(self, diagrams_root, temp_dir):
         a = collect_diagrams(diagrams_root, repo_root=temp_dir)[0]
@@ -180,20 +192,30 @@ class TestCollectDiagrams:
 
 class TestPageBodies:
 
-    def test_diagram_page_embeds_macro_and_version(self, diagrams_root, temp_dir, ctx):
+    def test_diagram_page_links_tabs_and_version(self, diagrams_root, temp_dir, ctx):
         source = collect_diagrams(diagrams_root, repo_root=temp_dir)[1]
         body = diagram_page_body(source, ctx)
-        assert '<ac:structured-macro ac:name="drawio"' in body
-        assert '<ac:parameter ac:name="diagramName">beta.drawio</ac:parameter>' in body
-        assert '<ac:parameter ac:name="attachment">beta.drawio</ac:parameter>' in body
+        # the diagram itself is rendered on the tab pages, not here
+        assert 'ac:name="drawio"' not in body
+        assert 'ri:content-title="beta: First Page"' in body
+        assert 'ri:content-title="beta: Third/Special Page"' in body
         assert 'ri:attachment ri:filename="beta.drawio"' in body
         # version section with permalinks
         assert "https://github.com/acme/diagrams/commit/0123456789abcdef0123456789abcdef01234567" in body
         assert "https://github.com/acme/diagrams/tree/0123456789abcdef0123456789abcdef01234567/diagrams/beta" in body
         assert "actions/runs/42" in body
         assert "2026-08-28 12:00:00 UTC" in body
-        # tab names are escaped
-        assert "<li>Third/Special Page</li>" in body
+
+    def test_tab_page_embeds_macro_and_version(self, diagrams_root, temp_dir, ctx):
+        tab = collect_diagrams(diagrams_root, repo_root=temp_dir)[1].tabs[0]
+        body = tab_page_body(tab, ctx)
+        assert '<ac:structured-macro ac:name="drawio"' in body
+        assert '<ac:parameter ac:name="diagramName">First_Page.drawio</ac:parameter>' in body
+        assert '<ac:parameter ac:name="attachment">First_Page.drawio</ac:parameter>' in body
+        assert 'ri:attachment ri:filename="First_Page.drawio"' in body
+        # permalink points at the tab's YAML file
+        assert "https://github.com/acme/diagrams/tree/0123456789abcdef0123456789abcdef01234567/diagrams/beta/First_Page.yaml" in body
+        assert "https://github.com/acme/diagrams/commit/0123456789abcdef0123456789abcdef01234567" in body
 
     def test_diagram_page_without_repo_info(self, diagrams_root, temp_dir):
         source = collect_diagrams(diagrams_root, repo_root=temp_dir)[0]
@@ -216,11 +238,16 @@ class TestPageBodies:
 
 class TestExport:
 
+    ALL_TITLES = [
+        "alpha", "alpha: Test Diagram",
+        "beta", "beta: First Page", "beta: Second Page", "beta: Third/Special Page",
+    ]
+
     def test_first_export_creates_pages_under_base(self, fake, diagrams_root, temp_dir, ctx):
         base = fake.add_page("Diagrams")
         result = export(fake, diagrams_root, temp_dir, ctx, base_page_id=base["id"])
 
-        assert result.created == ["alpha", "beta"]
+        assert result.created == self.ALL_TITLES
         assert result.updated == [] and result.skipped == []
         children = [p for p in fake.pages.values() if p["parentId"] == base["id"]]
         assert sorted(p["title"] for p in children) == ["alpha", "beta"]
@@ -228,7 +255,23 @@ class TestExport:
         alpha = fake.find_page("7", "alpha")
         assert b"<mxfile" in fake.attachments[alpha["id"]]["alpha.drawio"]
         assert fake.properties[alpha["id"]][PROPERTY_KEY]["value"]["commit"] == ctx.commit
-        assert 'ac:name="drawio"' in alpha["body"]["storage"]["value"]
+        # the diagram page links its tab pages; the macro lives on the tab page
+        assert 'ac:name="drawio"' not in alpha["body"]["storage"]["value"]
+        assert 'ri:content-title="alpha: Test Diagram"' in alpha["body"]["storage"]["value"]
+
+        tab = fake.find_page("7", "alpha: Test Diagram")
+        assert tab["parentId"] == alpha["id"]
+        assert 'ac:name="drawio"' in tab["body"]["storage"]["value"]
+        tab_xml = fake.attachments[tab["id"]]["Test_Diagram.drawio"]
+        assert tab_xml.count(b"<diagram") == 1
+        assert fake.properties[tab["id"]][PROPERTY_KEY]["value"]["source"] == "diagrams/alpha/Test_Diagram.yaml"
+
+        # beta gets one page per tab
+        beta = fake.find_page("7", "beta")
+        beta_tabs = [p for p in fake.pages.values() if p["parentId"] == beta["id"]]
+        assert sorted(p["title"] for p in beta_tabs) == [
+            "beta: First Page", "beta: Second Page", "beta: Third/Special Page",
+        ]
 
         # index written on the base page with a version message referencing the commit
         assert fake.pages[base["id"]]["version"]["number"] == 2
@@ -242,7 +285,7 @@ class TestExport:
         fake.calls.clear()
 
         result = export(fake, diagrams_root, temp_dir, ctx, base_page_id=base["id"])
-        assert result.skipped == ["alpha", "beta"]
+        assert result.skipped == self.ALL_TITLES
         assert not result.changed
         assert not any(c[0] in ("update_page", "upload_attachment", "create_page") for c in fake.calls)
         assert fake.pages[base["id"]]["version"]["number"] == 2  # index not rewritten
@@ -256,8 +299,8 @@ class TestExport:
         new_ctx = GitContext(repo_url=ctx.repo_url, commit="fedcba9876543210fedcba9876543210fedcba98", ref="master")
 
         result = export(fake, diagrams_root, temp_dir, new_ctx, base_page_id=base["id"])
-        assert result.updated == ["alpha"]
-        assert result.skipped == ["beta"]
+        assert result.updated == ["alpha", "alpha: Test Diagram"]
+        assert result.skipped == ["beta", "beta: First Page", "beta: Second Page", "beta: Third/Special Page"]
 
         alpha = fake.find_page("7", "alpha")
         assert alpha["version"]["number"] == 2
@@ -265,15 +308,43 @@ class TestExport:
         assert b"Goodbye" in fake.attachments[alpha["id"]]["alpha.drawio"]
         assert fake.properties[alpha["id"]][PROPERTY_KEY]["version"]["number"] == 2
         assert "fedcba9876543210fedcba9876543210fedcba98" in alpha["body"]["storage"]["value"]
+        # the tab page and its attachment were updated too
+        tab = fake.find_page("7", "alpha: Test Diagram")
+        assert tab["version"]["number"] == 2
+        assert b"Goodbye" in fake.attachments[tab["id"]]["Test_Diagram.drawio"]
         # base index refreshed
         assert fake.pages[base["id"]]["version"]["number"] == 3
         assert "updated @ fedcba9" in fake.pages[base["id"]]["body"]["storage"]["value"]
+
+    def test_changed_tab_updates_only_that_tab(self, fake, diagrams_root, temp_dir, ctx):
+        base = fake.add_page("Diagrams")
+        export(fake, diagrams_root, temp_dir, ctx, base_page_id=base["id"])
+
+        yaml_path = diagrams_root / "beta" / "First_Page.yaml"
+        yaml_path.write_text(yaml_path.read_text().replace("Page 1", "Page one"))
+
+        result = export(fake, diagrams_root, temp_dir, ctx, base_page_id=base["id"])
+        assert result.updated == ["beta", "beta: First Page"]
+        assert result.skipped == ["alpha", "alpha: Test Diagram", "beta: Second Page", "beta: Third/Special Page"]
 
     def test_force_updates_unchanged(self, fake, diagrams_root, temp_dir, ctx):
         base = fake.add_page("Diagrams")
         export(fake, diagrams_root, temp_dir, ctx, base_page_id=base["id"])
         result = export(fake, diagrams_root, temp_dir, ctx, base_page_id=base["id"], force=True)
-        assert result.updated == ["alpha", "beta"]
+        assert result.updated == self.ALL_TITLES
+
+    def test_old_format_export_migrates(self, fake, diagrams_root, temp_dir, ctx):
+        """A page exported before tab subpages existed is rewritten even though
+        its content hash still matches, and its tab pages are created."""
+        base = fake.add_page("Diagrams")
+        source = collect_diagrams(diagrams_root, repo_root=temp_dir)[0]
+        old = fake.add_page("alpha", parent_id=base["id"])
+        fake.set_property(old["id"], PROPERTY_KEY, {"hash": source.content_hash, "commit": "0" * 40})
+
+        result = export(fake, diagrams_root, temp_dir, ctx, base_page_id=base["id"])
+        assert "alpha" in result.updated
+        assert "alpha: Test Diagram" in result.created
+        assert fake.find_page("7", "alpha: Test Diagram")["parentId"] == old["id"]
 
     def test_base_page_found_by_title(self, fake, diagrams_root, temp_dir, ctx):
         base = fake.add_page("Diagrams")
@@ -289,7 +360,7 @@ class TestExport:
         )
         base = fake.pages[result.base_page_id]
         assert base["title"] == "Diagrams" and base["parentId"] == parent["id"]
-        assert sorted(result.created) == ["alpha", "beta"]
+        assert sorted(result.created) == self.ALL_TITLES
         assert "alpha" in base["body"]["storage"]["value"]
 
     def test_requires_target(self, fake, diagrams_root, temp_dir, ctx):
@@ -309,7 +380,7 @@ class TestExport:
     def test_dry_run_writes_nothing(self, fake, diagrams_root, temp_dir, ctx):
         base = fake.add_page("Diagrams")
         result = export(fake, diagrams_root, temp_dir, ctx, base_page_id=base["id"], dry_run=True)
-        assert result.created == ["alpha", "beta"]
+        assert result.created == self.ALL_TITLES
         assert len(fake.pages) == 1
         assert not fake.attachments
         assert not any(c[0] in ("create_page", "update_page", "upload_attachment", "set_property") for c in fake.calls)
