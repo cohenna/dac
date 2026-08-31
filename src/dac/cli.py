@@ -20,6 +20,28 @@ def _env_default(name):
     return {"default": value} if value else {}
 
 
+def _netrc_credentials(url):
+    """Return (login, password) for the URL's host from ~/.netrc, or (None, None).
+
+    Used as a last-resort fallback after CLI flags and CONFLUENCE_* env vars.
+    A missing or unparsable netrc file is treated the same as no entry.
+    """
+    import netrc
+    from urllib.parse import urlsplit
+
+    host = urlsplit(url).hostname
+    if not host:
+        return None, None
+    try:
+        entry = netrc.netrc().authenticators(host)
+    except (OSError, netrc.NetrcParseError):
+        return None, None
+    if not entry:
+        return None, None
+    login, _, password = entry
+    return login or None, password or None
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="dac",
@@ -47,8 +69,8 @@ def build_parser():
     )
     p.add_argument("--root", default="diagrams", help="Directory containing diagram directories (default: diagrams)")
     p.add_argument("--url", **_env_default("CONFLUENCE_URL"), help="Site URL, e.g. https://example.atlassian.net [CONFLUENCE_URL]")
-    p.add_argument("--user", **_env_default("CONFLUENCE_USER"), help="Atlassian account email [CONFLUENCE_USER]")
-    p.add_argument("--token", **_env_default("CONFLUENCE_API_TOKEN"), help="Atlassian API token [CONFLUENCE_API_TOKEN]")
+    p.add_argument("--user", **_env_default("CONFLUENCE_USER"), help="Atlassian account email [CONFLUENCE_USER, else ~/.netrc]")
+    p.add_argument("--token", **_env_default("CONFLUENCE_API_TOKEN"), help="Atlassian API token [CONFLUENCE_API_TOKEN, else ~/.netrc]")
     p.add_argument("--base-page-id", **_env_default("CONFLUENCE_BASE_PAGE_ID"), help="ID of the existing base page [CONFLUENCE_BASE_PAGE_ID]")
     p.add_argument("--space", **_env_default("CONFLUENCE_SPACE_KEY"), help="Space key, used with --base-title when no base page id is given [CONFLUENCE_SPACE_KEY]")
     p.add_argument("--base-title", **_env_default("CONFLUENCE_BASE_TITLE"), help="Title of the base page to find or create [CONFLUENCE_BASE_TITLE]")
@@ -66,9 +88,14 @@ def build_parser():
 def _run_export(args):
     from .confluence import ConfluenceClient, ConfluenceError, detect_git_context, export_to_confluence
 
+    if args.url and (not args.user or not args.token):
+        login, password = _netrc_credentials(args.url)
+        args.user = args.user or login
+        args.token = args.token or password
+
     missing = [n for n, v in (("--url", args.url), ("--user", args.user), ("--token", args.token)) if not v]
     if missing:
-        print(f"Error: missing {', '.join(missing)} (or the matching CONFLUENCE_* environment variable).")
+        print(f"Error: missing {', '.join(missing)} (or the matching CONFLUENCE_* environment variable, or a ~/.netrc entry for the site).")
         sys.exit(2)
     if not args.base_page_id and not (args.space and args.base_title):
         print("Error: give --base-page-id, or --space together with --base-title.")

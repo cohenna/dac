@@ -100,9 +100,10 @@ code rather than the CLI-oriented functions.
   client deliberately uses `urllib` instead of `requests`. Adding a runtime
   dependency needs a good reason; prefer an optional extra in
   `pyproject.toml` (`[project.optional-dependencies]`) with a lazy import.
-- **Secrets** (Confluence token etc.) come from CLI flags or `CONFLUENCE_*`
-  env vars only. Never log them, never write them to files, never add them
-  to test fixtures.
+- **Secrets** (Confluence token etc.) come from CLI flags, `CONFLUENCE_*`
+  env vars, or — as a last resort for local runs — the `~/.netrc` entry for
+  the site host (in that precedence order). Never log them, never write them
+  to files, never add them to test fixtures.
 - **Errors in CLI paths** print a message and `sys.exit(1)`; library-style
   helpers should raise exceptions instead so they are usable from other code.
 - **Output paths are derived from the base name** (`<base>.drawio` ↔
