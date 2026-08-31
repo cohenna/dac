@@ -161,7 +161,9 @@ environment variables take precedence:
 machine example.atlassian.net
   login you@example.com
   password <api-token>
-``` The repository URL and commit
+```
+
+The repository URL and commit
 are auto-detected from GitHub Actions variables or the local git checkout;
 override with `--repo-url` / `--commit`.
 
