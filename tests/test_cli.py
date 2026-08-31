@@ -8,6 +8,19 @@ import pytest
 from dac.cli import build_parser, main
 
 
+@pytest.fixture
+def netrc_home(monkeypatch, temp_dir):
+    """Point ~ at temp_dir holding a .netrc entry for x.atlassian.net."""
+    monkeypatch.delenv("NETRC", raising=False)
+    monkeypatch.setenv("HOME", str(temp_dir))
+    for k in ("CONFLUENCE_USER", "CONFLUENCE_API_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    netrc_file = Path(temp_dir) / ".netrc"
+    netrc_file.write_text("machine x.atlassian.net login netrc@example.com password netrc-token\n")
+    netrc_file.chmod(0o600)
+    return netrc_file
+
+
 class TestParser:
 
     def test_d2c_and_c2d(self):
@@ -77,3 +90,53 @@ class TestMain:
         out = capsys.readouterr().out
         assert "1 created, 0 updated, 0 unchanged" in out
         assert fake.find_page("7", "a") is not None
+
+
+class TestNetrcFallback:
+
+    def test_lookup(self, netrc_home):
+        from dac.cli import _netrc_credentials
+        assert _netrc_credentials("https://x.atlassian.net") == ("netrc@example.com", "netrc-token")
+        assert _netrc_credentials("https://other.example.com") == (None, None)
+
+    def test_missing_file_is_no_entry(self, monkeypatch, temp_dir):
+        from dac.cli import _netrc_credentials
+        monkeypatch.delenv("NETRC", raising=False)
+        monkeypatch.setenv("HOME", str(temp_dir))
+        assert _netrc_credentials("https://x.atlassian.net") == (None, None)
+
+    def _export(self, monkeypatch, temp_dir, single_diagram_xml, extra_args):
+        """Run a full export with a FakeConfluence, returning the client credentials used."""
+        from dac import diagram_to_code
+        from tests.test_confluence import FakeConfluence
+
+        root = Path(temp_dir) / "diagrams"
+        root.mkdir()
+        os.chdir(root)
+        Path("a.drawio").write_text(single_diagram_xml)
+        diagram_to_code("a")
+        os.chdir(temp_dir)
+
+        fake = FakeConfluence()
+        base = fake.add_page("Diagrams")
+        seen = {}
+
+        def fake_client(url, user, token, **kwargs):
+            seen.update(user=user, token=token)
+            return fake
+
+        monkeypatch.setattr("dac.confluence.ConfluenceClient", fake_client)
+        main([
+            "export-confluence", "--url", "https://x.atlassian.net",
+            "--base-page-id", base["id"], "--root", "diagrams", "--commit", "abcdef0",
+        ] + extra_args)
+        return seen
+
+    def test_export_uses_netrc_credentials(self, netrc_home, monkeypatch, temp_dir, single_diagram_xml, capsys):
+        seen = self._export(monkeypatch, temp_dir, single_diagram_xml, [])
+        assert seen == {"user": "netrc@example.com", "token": "netrc-token"}
+        assert "1 created" in capsys.readouterr().out
+
+    def test_flags_and_env_beat_netrc(self, netrc_home, monkeypatch, temp_dir, single_diagram_xml, capsys):
+        seen = self._export(monkeypatch, temp_dir, single_diagram_xml, ["--user", "flag@example.com"])
+        assert seen == {"user": "flag@example.com", "token": "netrc-token"}

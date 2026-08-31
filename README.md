@@ -153,7 +153,17 @@ dac export-confluence --out-dir build # also write the generated .drawio files
 ```
 
 Every option has a `CONFLUENCE_*` environment-variable fallback
-(`dac export-confluence --help` lists them). The repository URL and commit
+(`dac export-confluence --help` lists them). Instead of exporting the
+credentials you can keep them in `~/.netrc` (must be `chmod 600`); flags and
+environment variables take precedence:
+
+```
+machine example.atlassian.net
+  login you@example.com
+  password <api-token>
+```
+
+The repository URL and commit
 are auto-detected from GitHub Actions variables or the local git checkout;
 override with `--repo-url` / `--commit`.
 
