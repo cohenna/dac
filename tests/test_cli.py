@@ -88,8 +88,10 @@ class TestMain:
             "--base-page-id", base["id"], "--root", "diagrams", "--commit", "abcdef0",
         ])
         out = capsys.readouterr().out
-        assert "1 created, 0 updated, 0 unchanged" in out
+        # the diagram page plus one tab page
+        assert "2 created, 0 updated, 0 unchanged" in out
         assert fake.find_page("7", "a") is not None
+        assert fake.find_page("7", "a: Test Diagram") is not None
 
 
 class TestNetrcFallback:
@@ -135,7 +137,7 @@ class TestNetrcFallback:
     def test_export_uses_netrc_credentials(self, netrc_home, monkeypatch, temp_dir, single_diagram_xml, capsys):
         seen = self._export(monkeypatch, temp_dir, single_diagram_xml, [])
         assert seen == {"user": "netrc@example.com", "token": "netrc-token"}
-        assert "1 created" in capsys.readouterr().out
+        assert "2 created" in capsys.readouterr().out
 
     def test_flags_and_env_beat_netrc(self, netrc_home, monkeypatch, temp_dir, single_diagram_xml, capsys):
         seen = self._export(monkeypatch, temp_dir, single_diagram_xml, ["--user", "flag@example.com"])

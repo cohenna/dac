@@ -70,21 +70,27 @@ code rather than the CLI-oriented functions.
   Base URL is the site root; `/wiki` is added automatically.
 - `export_to_confluence(client, root, ...)` is the orchestration:
   1. `collect_diagrams` builds a `DiagramSource` (title = directory name,
-     attachment `<name>.drawio`, XML, tab list, sha256 hash) per diagram dir.
+     attachment `<name>.drawio`, XML, sha256 hash) per diagram dir, each
+     holding a `TabSource` per tab (title `<diagram>: <tab>`, a single-tab
+     `.drawio` built by `converter.build_tab_drawio_xml`, and the tab's YAML
+     file as `rel_path`).
   2. The base page is resolved by id, or by space key + title (created under
      `parent_page_id` if missing).
-  3. For each diagram: find the child page by title under the base page →
-     create, or compare the hash stored in the `dac-export` content property
-     and update only when changed (or `force`). Updates upload the attachment,
-     bump the page version with message `DAC export from <sha>`, and rewrite
-     the property.
+  3. For each diagram, `_sync_page` creates/updates/skips the diagram page
+     under the base page, then each tab page under the diagram page. A page
+     is skipped when the hash **and** `format` stored in its `dac-export`
+     content property match (`EXPORT_FORMAT` is bumped when the page
+     structure changes so old exports migrate; `force` overrides). Updates
+     upload the attachment, bump the page version with message
+     `DAC export from <sha>`, and rewrite the property.
   4. Rewrite the base page body with an index (unless `update_index=False`)
      when anything changed.
-- Page bodies are Confluence *storage format* built in `diagram_page_body` /
-  `index_page_body`. The diagram is embedded with
-  `<ac:structured-macro ac:name="drawio">` whose `diagramName` and
-  `attachment` parameters equal the attachment filename. Always `escape()`
-  user-derived strings that go into the body.
+- Page bodies are Confluence *storage format* built in `diagram_page_body`
+  (provenance + links to tab pages + full-file download), `tab_page_body`
+  (the embedded diagram + provenance) and `index_page_body`. The diagram is
+  embedded on tab pages with `<ac:structured-macro ac:name="drawio">` whose
+  `diagramName` and `attachment` parameters equal the tab's attachment
+  filename. Always `escape()` user-derived strings that go into the body.
 - `GitContext` / `detect_git_context` supply the commit, browsable repo URL,
   ref and workflow-run URL (from `GITHUB_*` env vars, else `git`) used for
   permalinks (`<repo>/tree/<sha>/<rel_path>`) and version messages.
@@ -112,8 +118,10 @@ code rather than the CLI-oriented functions.
   directory.
 - **YAML output:** `default_flow_style=False, allow_unicode=True`, keys in
   the order `xmltodict` produces. Don't sort keys.
-- **Version** is duplicated in `pyproject.toml`, `src/dac/__init__.py` and
-  `src/dac/cli.py` (`--version`). Bump all three together.
+- **Version** is duplicated in `pyproject.toml` and `src/dac/__init__.py`
+  (`cli.py --version` imports the latter). Bump both together on every
+  user-visible change — `pip install git+…` won't upgrade an existing
+  install when the version number is unchanged.
 - Console output uses `✓` prefixes; keep messages short and consistent with
   the existing style.
 
